@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare, MapPin } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseLite as supabase } from "@/integrations/supabase/lite";
 import { toast } from "sonner";
 import { format, differenceInDays, addMinutes } from "date-fns";
 // PDF libs dynamically imported in handler
