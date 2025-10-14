@@ -9,6 +9,8 @@ import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare, M
 import { supabaseLite as supabase } from "@/integrations/supabase/lite";
 import { toast } from "sonner";
 import { format, differenceInDays, addMinutes } from "date-fns";
+import { ActivityLibrary } from "@/components/ActivityLibrary";
+import { useTripStore } from "@/store/tripStore";
 // PDF libs dynamically imported in handler
 
 interface Trip {
@@ -262,6 +264,50 @@ const Itinerary = () => {
     }
   };
 
+  // Zustand store action
+  const { addActivityToItinerary } = useTripStore();
+
+  const handleAddActivity = async (activity: Activity) => {
+    if (!trip) return;
+
+    const lastBlock = blocks.length > 0 ? blocks[blocks.length - 1] : null;
+
+    addActivityToItinerary(activity, trip.id, lastBlock as any, async (newBlock, newChecklistItems) => {
+      try {
+        // Insert the new itinerary block
+        const { data: insertedBlock, error: blockError } = await supabase
+          .from('itinerary_blocks')
+          .insert([newBlock])
+          .select(`*, activity:activity_id (*)`)
+          .single();
+
+        if (blockError) throw blockError;
+
+        // Insert checklist items
+        const { error: checklistError } = await supabase
+          .from('checklist_items')
+          .insert(newChecklistItems);
+
+        if (checklistError) throw checklistError;
+
+        // Update local state
+        setBlocks([...blocks, insertedBlock as any]);
+
+        toast.success(`Added "${activity.title}" to itinerary with ${newChecklistItems.length} checklist item(s)`);
+
+        // Track analytics
+        await supabase.from('analytics_events').insert([{
+          event_name: 'activity_added',
+          trip_id: trip.id,
+          properties: { activity_id: activity.id, activity_title: activity.title }
+        }]);
+      } catch (error) {
+        console.error('Error adding activity:', error);
+        toast.error('Failed to add activity');
+      }
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -399,6 +445,15 @@ const Itinerary = () => {
         </div>
       </div>
 
+      {/* Activity Library Modal */}
+      <ActivityLibrary
+        open={showActivities}
+        onOpenChange={setShowActivities}
+        activities={activities}
+        onAddActivity={handleAddActivity}
+      />
+
+      {/* Map Dialog */}
       {mapData && (
         <Dialog open={showMapDialog} onOpenChange={setShowMapDialog}>
           <DialogContent className="max-w-3xl">
