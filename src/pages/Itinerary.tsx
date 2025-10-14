@@ -8,8 +8,7 @@ import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare, M
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { format, differenceInDays, addMinutes } from "date-fns";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+// PDF libs dynamically imported in handler
 
 interface Trip {
   id: string;
@@ -240,6 +239,8 @@ const Itinerary = () => {
 
     try {
       toast.info("Generating PDF...");
+      const { default: html2canvas } = await import('html2canvas');
+      const { default: jsPDF } = await import('jspdf');
       const canvas = await html2canvas(element);
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
