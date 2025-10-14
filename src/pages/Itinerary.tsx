@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare } from "lucide-react";
+import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { format, differenceInDays, addMinutes } from "date-fns";
+import { MapDialog } from "@/components/MapDialog";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
 interface Trip {
   id: string;
@@ -39,6 +42,8 @@ interface ItineraryBlock {
   notes: string;
   activity_id?: string;
   activity?: Activity;
+  lat?: number;
+  lng?: number;
 }
 
 const Itinerary = () => {
@@ -49,6 +54,8 @@ const Itinerary = () => {
   const [blocks, setBlocks] = useState<ItineraryBlock[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [showActivities, setShowActivities] = useState(false);
+  const [mapBlock, setMapBlock] = useState<ItineraryBlock | null>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadTripData();
@@ -226,6 +233,32 @@ const Itinerary = () => {
     }
   };
 
+  const handleExportPdf = async () => {
+    const element = exportRef.current;
+    if (!element) return;
+
+    try {
+      toast.info("Generating PDF...");
+      const canvas = await html2canvas(element);
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${trip?.title || 'itinerary'}.pdf`);
+      
+      await supabase.from("analytics_events").insert([{
+        event_name: "pdf_exported",
+        trip_id: id,
+      }]);
+      
+      toast.success("PDF exported successfully!");
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast.error("Failed to export PDF");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -260,7 +293,7 @@ const Itinerary = () => {
                 <Share2 className="w-4 h-4 mr-2" />
                 Share
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleExportPdf}>
                 <Download className="w-4 h-4 mr-2" />
                 Export PDF
               </Button>
@@ -303,7 +336,7 @@ const Itinerary = () => {
         </div>
 
         {/* Timeline */}
-        <div className="space-y-4">
+        <div className="space-y-4" ref={exportRef}>
           {blocks.map((block, index) => (
             <Card 
               key={block.id}
@@ -342,12 +375,33 @@ const Itinerary = () => {
                   <div className="text-2xl font-bold text-primary">
                     {Math.floor((new Date(block.end_time).getTime() - new Date(block.start_time).getTime()) / 60000)}min
                   </div>
+                  {(block.lat && block.lng) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMapBlock(block)}
+                      className="mt-2"
+                    >
+                      <MapPin className="w-4 h-4 mr-2" />
+                      View Map
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>
           ))}
         </div>
       </div>
+
+      {mapBlock && mapBlock.lat && mapBlock.lng && (
+        <MapDialog
+          open={!!mapBlock}
+          onClose={() => setMapBlock(null)}
+          lat={mapBlock.lat}
+          lng={mapBlock.lng}
+          title={mapBlock.title}
+        />
+      )}
     </div>
   );
 };

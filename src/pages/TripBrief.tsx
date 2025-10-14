@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,9 +12,13 @@ import { CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useTripStore } from "@/store/tripStore";
+import { budgetLevels } from "@/data/vietnam-destinations";
+import { TripVibe } from "@/types";
 
 const TripBrief = () => {
   const navigate = useNavigate();
+  const { selectedDestination, selectedAttractions, setVibe, setBudget } = useTripStore();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
@@ -23,8 +27,17 @@ const TripBrief = () => {
     endDate: undefined as Date | undefined,
     participantCount: "10",
     budgetLevel: "medium",
+    vibe: "Balanced" as TripVibe,
     goalTags: [] as string[],
   });
+
+  useEffect(() => {
+    // Redirect if no destination selected
+    if (!selectedDestination) {
+      toast.error("Please select a destination first");
+      navigate("/");
+    }
+  }, [selectedDestination, navigate]);
 
   const goalOptions = [
     "Team Building",
@@ -96,9 +109,17 @@ const TripBrief = () => {
         properties: { 
           participant_count: formData.participantCount,
           budget_level: formData.budgetLevel,
-          goal_count: formData.goalTags.length
+          vibe: formData.vibe,
+          goal_count: formData.goalTags.length,
+          destination: selectedDestination?.city,
+          attractions_count: selectedAttractions.length
         }
       }]);
+
+      // Store vibe and budget in Zustand
+      setVibe(formData.vibe);
+      const budget = budgetLevels.find(b => b.key === formData.budgetLevel);
+      if (budget) setBudget(budget);
 
       toast.success("Trip brief created! Generating itinerary...");
       navigate(`/trip/${tripData.id}/itinerary`);
@@ -190,8 +211,8 @@ const TripBrief = () => {
               </div>
             </div>
 
-            {/* Participant Count & Budget */}
-            <div className="grid md:grid-cols-2 gap-4">
+            {/* Participant Count, Budget, Vibe */}
+            <div className="grid md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="participants">Number of Participants</Label>
                 <Input
@@ -214,9 +235,31 @@ const TripBrief = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">Low ($)</SelectItem>
-                    <SelectItem value="medium">Medium ($$)</SelectItem>
-                    <SelectItem value="high">High ($$$)</SelectItem>
+                    {budgetLevels.map(level => (
+                      <SelectItem key={level.key} value={level.key}>
+                        <div>
+                          <div className="font-medium">{level.label}</div>
+                          <div className="text-xs text-muted-foreground">{level.description}</div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="vibe">Trip Vibe</Label>
+                <Select 
+                  value={formData.vibe} 
+                  onValueChange={(value: TripVibe) => setFormData(prev => ({ ...prev, vibe: value }))}
+                >
+                  <SelectTrigger id="vibe">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Relaxed & Chill">Relaxed & Chill</SelectItem>
+                    <SelectItem value="Active & Adventurous">Active & Adventurous</SelectItem>
+                    <SelectItem value="Balanced">Balanced</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
