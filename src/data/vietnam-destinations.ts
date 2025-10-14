@@ -1,4 +1,4 @@
-import { Destination, BudgetLevel } from '@/types';
+import { Destination, BudgetLevel, budgetLevels } from './types';
 
 export const vietnamDestinations: Destination[] = [
   {
@@ -470,23 +470,5 @@ export const vietnamDestinations: Destination[] = [
         lng: 105.779 
       }
     ]
-  }
-];
-
-export const budgetLevels: BudgetLevel[] = [
-  {
-    key: "low",
-    label: "Economical",
-    description: "Under $25/person/day"
-  },
-  {
-    key: "medium",
-    label: "Moderate",
-    description: "$25-60/person/day"
-  },
-  {
-    key: "high",
-    label: "Premium",
-    description: "Above $60/person/day"
   }
 ];

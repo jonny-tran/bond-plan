@@ -4,29 +4,9 @@ import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { Calendar, Users, CheckSquare, Clock, Sparkles, TrendingUp } from "lucide-react";
 import heroImage from "@/assets/hero-landing.jpg";
-import { vietnamDestinations } from "@/data/vietnam-destinations";
-import { useTripStore } from "@/store/tripStore";
-import { AttractionSelector } from "@/components/AttractionSelector";
-import { Destination } from "@/types";
 
 const Index = () => {
   const navigate = useNavigate();
-  const { setDestination, setAttractions } = useTripStore();
-  const [selectedDest, setSelectedDest] = useState<Destination | null>(null);
-  const [showAttractions, setShowAttractions] = useState(false);
-
-  const handleDestinationClick = (destination: Destination) => {
-    setSelectedDest(destination);
-    setShowAttractions(true);
-  };
-
-  const handleConfirmAttractions = (attractions: any[]) => {
-    if (selectedDest) {
-      setDestination(selectedDest);
-      setAttractions(attractions);
-      navigate("/trip/new");
-    }
-  };
 
   const features = [
     {
@@ -83,14 +63,13 @@ const Index = () => {
                 Get instant itineraries, smart checklists, and day-of run sheets.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
-                <a href="#destinations">
-                  <Button 
-                    size="lg" 
-                    className="text-lg h-14 px-8"
-                  >
-                    Choose Destination
-                  </Button>
-                </a>
+                <Button 
+                  size="lg" 
+                  className="text-lg h-14 px-8"
+                  onClick={() => navigate("/destinations")}
+                >
+                  Choose Destination
+                </Button>
                 <Button 
                   size="lg" 
                   variant="outline" 
@@ -129,36 +108,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Destinations Section */}
-      <section id="destinations" className="container mx-auto px-4 py-20">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold mb-4">Choose Your Destination</h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Select a city to explore attractions and start planning your trip
-          </p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 max-w-6xl mx-auto">
-          {vietnamDestinations.map((dest) => (
-            <Card
-              key={dest.id}
-              className="cursor-pointer hover:scale-105 transition-all overflow-hidden"
-              onClick={() => handleDestinationClick(dest)}
-            >
-              <img
-                src={dest.imageUrl}
-                alt={dest.city}
-                className="w-full h-40 object-cover"
-              />
-              <div className="p-4 text-center">
-                <h3 className="font-bold text-lg">{dest.city}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {dest.attractions.length} attractions
-                </p>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </section>
+      {/* Destinations Section - Remove this as we have a dedicated page */}
 
       {/* Features Grid */}
       <section className="container mx-auto px-4 py-20">
@@ -279,15 +229,6 @@ const Index = () => {
           </Button>
         </div>
       </section>
-
-      {selectedDest && (
-        <AttractionSelector
-          destination={selectedDest}
-          open={showAttractions}
-          onClose={() => setShowAttractions(false)}
-          onConfirm={handleConfirmAttractions}
-        />
-      )}
     </div>
   );
 };

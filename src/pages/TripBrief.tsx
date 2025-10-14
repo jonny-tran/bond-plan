@@ -12,13 +12,12 @@ import { CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useTripStore } from "@/store/tripStore";
 import { budgetLevels } from "@/data/vietnam-destinations";
-import { TripVibe } from "@/types";
+
+type TripVibe = "Relaxed & Chill" | "Active & Adventurous" | "Balanced";
 
 const TripBrief = () => {
   const navigate = useNavigate();
-  const { selectedDestination, selectedAttractions, setVibe, setBudget } = useTripStore();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
@@ -32,12 +31,13 @@ const TripBrief = () => {
   });
 
   useEffect(() => {
-    // Redirect if no destination selected
-    if (!selectedDestination) {
+    // Check if destination was selected
+    const dest = localStorage.getItem('selectedDestination');
+    if (!dest) {
       toast.error("Please select a destination first");
-      navigate("/");
+      navigate("/destinations");
     }
-  }, [selectedDestination, navigate]);
+  }, [navigate]);
 
   const goalOptions = [
     "Team Building",
@@ -102,6 +102,9 @@ const TripBrief = () => {
       if (tripError) throw tripError;
 
       // Track analytics
+      const dest = JSON.parse(localStorage.getItem('selectedDestination') || '{}');
+      const attractions = JSON.parse(localStorage.getItem('selectedAttractions') || '[]');
+      
       await supabase.from("analytics_events").insert([{
         event_name: "brief_submitted",
         trip_id: tripData.id,
@@ -111,15 +114,10 @@ const TripBrief = () => {
           budget_level: formData.budgetLevel,
           vibe: formData.vibe,
           goal_count: formData.goalTags.length,
-          destination: selectedDestination?.city,
-          attractions_count: selectedAttractions.length
+          destination: dest?.city || 'unknown',
+          attractions_count: attractions.length
         }
       }]);
-
-      // Store vibe and budget in Zustand
-      setVibe(formData.vibe);
-      const budget = budgetLevels.find(b => b.key === formData.budgetLevel);
-      if (budget) setBudget(budget);
 
       toast.success("Trip brief created! Generating itinerary...");
       navigate(`/trip/${tripData.id}/itinerary`);

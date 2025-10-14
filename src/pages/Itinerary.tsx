@@ -3,11 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { format, differenceInDays, addMinutes } from "date-fns";
-import { MapDialog } from "@/components/MapDialog";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
@@ -33,7 +33,7 @@ interface Activity {
   is_signature: boolean;
 }
 
-interface ItineraryBlock {
+interface BlockData {
   id: string;
   title: string;
   start_time: string;
@@ -51,10 +51,11 @@ const Itinerary = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [blocks, setBlocks] = useState<ItineraryBlock[]>([]);
+  const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [showActivities, setShowActivities] = useState(false);
-  const [mapBlock, setMapBlock] = useState<ItineraryBlock | null>(null);
+  const [showMapDialog, setShowMapDialog] = useState(false);
+  const [mapData, setMapData] = useState<{ lat: number; lng: number; title: string } | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -379,7 +380,10 @@ const Itinerary = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setMapBlock(block)}
+                      onClick={() => {
+                        setMapData({ lat: block.lat!, lng: block.lng!, title: block.title });
+                        setShowMapDialog(true);
+                      }}
                       className="mt-2"
                     >
                       <MapPin className="w-4 h-4 mr-2" />
@@ -393,14 +397,24 @@ const Itinerary = () => {
         </div>
       </div>
 
-      {mapBlock && mapBlock.lat && mapBlock.lng && (
-        <MapDialog
-          open={!!mapBlock}
-          onClose={() => setMapBlock(null)}
-          lat={mapBlock.lat}
-          lng={mapBlock.lng}
-          title={mapBlock.title}
-        />
+      {mapData && (
+        <Dialog open={showMapDialog} onOpenChange={setShowMapDialog}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>{mapData.title}</DialogTitle>
+            </DialogHeader>
+            <div className="w-full h-[450px]">
+              <iframe
+                width="100%"
+                height="100%"
+                style={{ border: 0 }}
+                loading="lazy"
+                allowFullScreen
+                src={`https://maps.google.com/maps?q=${mapData.lat},${mapData.lng}&hl=en&z=14&output=embed`}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
