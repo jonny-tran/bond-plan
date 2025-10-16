@@ -42,7 +42,63 @@ interface TripStore {
     lastBlock: ItineraryBlock | null,
     onSuccess: (newBlock: ItineraryBlock, newChecklistItems: ChecklistItem[]) => void
   ) => void;
+  updateBlock: (
+    blockId: string,
+    updates: Partial<ItineraryBlock>,
+    onSuccess: (updatedBlock: ItineraryBlock) => void
+  ) => void;
+  deleteBlock: (blockId: string, onSuccess: () => void) => void;
+  reorderBlocks: (
+    blocks: ItineraryBlock[],
+    activeId: string,
+    overId: string,
+    onSuccess: (reorderedBlocks: ItineraryBlock[]) => void
+  ) => void;
+  updateChecklistItem: (
+    itemId: string,
+    updates: Partial<ChecklistItem>,
+    onSuccess: (updatedItem: ChecklistItem) => void
+  ) => void;
+  deleteChecklistItem: (itemId: string, onSuccess: () => void) => void;
+  reorderChecklist: (
+    items: ChecklistItem[],
+    activeId: string,
+    overId: string,
+    onSuccess: (reorderedItems: ChecklistItem[]) => void
+  ) => void;
 }
+
+// Helper function to recalculate block times maintaining chronological order
+const recalculateBlockTimes = (blocks: ItineraryBlock[]): ItineraryBlock[] => {
+  if (blocks.length === 0) return blocks;
+  
+  return blocks.map((block, index) => {
+    if (index === 0) {
+      // Keep the first block's start time as anchor
+      return block;
+    }
+    
+    const prevBlock = blocks[index - 1];
+    const newStartTime = new Date(new Date(prevBlock.end_time).getTime() + 15 * 60000); // 15 min buffer
+    const duration = block.end_time && block.start_time 
+      ? new Date(block.end_time).getTime() - new Date(block.start_time).getTime()
+      : 60 * 60000; // Default 60 min if duration not set
+    
+    return {
+      ...block,
+      start_time: newStartTime.toISOString(),
+      end_time: new Date(newStartTime.getTime() + duration).toISOString(),
+    };
+  });
+};
+
+// Helper function for array reordering
+const arrayMove = <T,>(array: T[], from: number, to: number): T[] => {
+  const newArray = array.slice();
+  const [movedItem] = newArray.splice(from, 1);
+  newArray.splice(to, 0, movedItem);
+  return newArray;
+};
 
 export const useTripStore = create<TripStore>((set) => ({
   addActivityToItinerary: (activity, tripId, lastBlock, onSuccess) => {
@@ -108,5 +164,53 @@ export const useTripStore = create<TripStore>((set) => ({
 
     // Call success callback with the data to be inserted
     onSuccess(newBlock, newChecklistItems);
+  },
+
+  updateBlock: (blockId, updates, onSuccess) => {
+    const updatedBlock = { ...updates, id: blockId } as ItineraryBlock;
+    onSuccess(updatedBlock);
+  },
+
+  deleteBlock: (blockId, onSuccess) => {
+    onSuccess();
+  },
+
+  reorderBlocks: (blocks, activeId, overId, onSuccess) => {
+    const oldIndex = blocks.findIndex(b => b.id === activeId);
+    const newIndex = blocks.findIndex(b => b.id === overId);
+    
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      return;
+    }
+
+    const reordered = arrayMove(blocks, oldIndex, newIndex);
+    const recalculated = recalculateBlockTimes(reordered);
+    
+    onSuccess(recalculated);
+  },
+
+  updateChecklistItem: (itemId, updates, onSuccess) => {
+    const updatedItem = { ...updates, id: itemId } as ChecklistItem;
+    onSuccess(updatedItem);
+  },
+
+  deleteChecklistItem: (itemId, onSuccess) => {
+    onSuccess();
+  },
+
+  reorderChecklist: (items, activeId, overId, onSuccess) => {
+    const oldIndex = items.findIndex(c => c.id === activeId);
+    const newIndex = items.findIndex(c => c.id === overId);
+    
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      return;
+    }
+
+    const reordered = arrayMove(items, oldIndex, newIndex).map((item, index) => ({
+      ...item,
+      item_order: index,
+    }));
+    
+    onSuccess(reordered);
   },
 }));

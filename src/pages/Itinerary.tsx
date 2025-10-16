@@ -4,13 +4,20 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Loader2, Plus, Calendar, Users, Share2, Download, Clock, CheckSquare, MapPin } from "lucide-react";
 import { supabaseLite as supabase } from "@/integrations/supabase/lite";
 import { toast } from "sonner";
 import { format, differenceInDays, addMinutes } from "date-fns";
 import { ActivityLibrary } from "@/components/ActivityLibrary";
+import { DraggableItineraryBlock } from "@/components/DraggableItineraryBlock";
 import { useTripStore } from "@/store/tripStore";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 // PDF libs dynamically imported in handler
 
 interface Trip {
@@ -58,7 +65,16 @@ const Itinerary = () => {
   const [showActivities, setShowActivities] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
   const [mapData, setMapData] = useState<{ lat: number; lng: number; title: string } | null>(null);
+  const [editingBlock, setEditingBlock] = useState<BlockData | null>(null);
+  const [deletingBlockId, setDeletingBlockId] = useState<string | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     loadTripData();
@@ -264,8 +280,8 @@ const Itinerary = () => {
     }
   };
 
-  // Zustand store action
-  const { addActivityToItinerary } = useTripStore();
+  // Zustand store actions
+  const { addActivityToItinerary, updateBlock, deleteBlock, reorderBlocks } = useTripStore();
 
   const handleAddActivity = async (activity: Activity) => {
     if (!trip) return;
@@ -307,6 +323,111 @@ const Itinerary = () => {
       } catch (error) {
         console.error('Error adding activity:', error);
         toast.error('Failed to add activity');
+      }
+    });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    reorderBlocks(blocks as any, active.id as string, over.id as string, async (reorderedBlocks) => {
+      try {
+        // Update all blocks in database with new order and times
+        const updates = reorderedBlocks.map((block, index) => ({
+          id: block.id,
+          start_time: block.start_time,
+          end_time: block.end_time,
+          block_order: index,
+        }));
+
+        for (const update of updates) {
+          await supabase
+            .from('itinerary_blocks')
+            .update({
+              start_time: update.start_time,
+              end_time: update.end_time,
+              block_order: update.block_order,
+            })
+            .eq('id', update.id);
+        }
+
+        // Update local state
+        const updatedBlocks = await supabase
+          .from('itinerary_blocks')
+          .select(`*, activity:activity_id (*)`)
+          .eq('trip_id', id)
+          .order('block_order');
+
+        if (updatedBlocks.data) {
+          setBlocks(updatedBlocks.data as any);
+        }
+
+        toast.success('Itinerary reordered successfully');
+      } catch (error) {
+        console.error('Error reordering blocks:', error);
+        toast.error('Failed to reorder itinerary');
+      }
+    });
+  };
+
+  const handleEditBlock = (block: BlockData) => {
+    setEditingBlock(block);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingBlock) return;
+
+    updateBlock(editingBlock.id, editingBlock as any, async (updatedBlock) => {
+      try {
+        const { error } = await supabase
+          .from('itinerary_blocks')
+          .update({
+            title: editingBlock.title,
+            notes: editingBlock.notes,
+            location: editingBlock.location,
+          })
+          .eq('id', editingBlock.id);
+
+        if (error) throw error;
+
+        // Reload data
+        const { data: blocksData } = await supabase
+          .from('itinerary_blocks')
+          .select(`*, activity:activity_id (*)`)
+          .eq('trip_id', id)
+          .order('start_time');
+
+        if (blocksData) {
+          setBlocks(blocksData as any);
+        }
+
+        toast.success('Block updated successfully');
+        setEditingBlock(null);
+      } catch (error) {
+        console.error('Error updating block:', error);
+        toast.error('Failed to update block');
+      }
+    });
+  };
+
+  const handleDeleteBlock = async (blockId: string) => {
+    deleteBlock(blockId, async () => {
+      try {
+        const { error } = await supabase
+          .from('itinerary_blocks')
+          .delete()
+          .eq('id', blockId);
+
+        if (error) throw error;
+
+        setBlocks(blocks.filter(b => b.id !== blockId));
+        toast.success('Block deleted successfully');
+        setDeletingBlockId(null);
+      } catch (error) {
+        console.error('Error deleting block:', error);
+        toast.error('Failed to delete block');
       }
     });
   };
@@ -387,64 +508,28 @@ const Itinerary = () => {
           </Button>
         </div>
 
-        {/* Timeline */}
+        {/* Timeline with Drag and Drop */}
         <div className="space-y-4" ref={exportRef}>
-          {blocks.map((block, index) => (
-            <Card 
-              key={block.id}
-              className="p-6 hover:shadow-lg transition-all"
-              style={{ 
-                background: block.activity?.is_signature ? "var(--gradient-hero)" : "var(--gradient-card)",
-                borderLeft: block.activity?.is_signature ? "4px solid hsl(var(--accent))" : undefined
-              }}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="text-sm font-semibold text-muted-foreground">
-                      {format(new Date(block.start_time), "h:mm a")} - {format(new Date(block.end_time), "h:mm a")}
-                    </div>
-                    {block.activity?.is_signature && (
-                      <Badge className="bg-accent">Signature Activity</Badge>
-                    )}
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">{block.title}</h3>
-                  {block.notes && (
-                    <p className="text-muted-foreground mb-2">{block.notes}</p>
-                  )}
-                  {block.location && (
-                    <p className="text-sm text-muted-foreground">📍 {block.location}</p>
-                  )}
-                  {block.activity && (
-                    <div className="flex gap-2 mt-3">
-                      {block.activity.tags.map(tag => (
-                        <Badge key={tag} variant="outline">{tag}</Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-primary">
-                    {Math.floor((new Date(block.end_time).getTime() - new Date(block.start_time).getTime()) / 60000)}min
-                  </div>
-                  {(block.lat && block.lng) && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setMapData({ lat: block.lat!, lng: block.lng!, title: block.title });
-                        setShowMapDialog(true);
-                      }}
-                      className="mt-2"
-                    >
-                      <MapPin className="w-4 h-4 mr-2" />
-                      View Map
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          ))}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
+              {blocks.map((block) => (
+                <DraggableItineraryBlock
+                  key={block.id}
+                  block={block}
+                  onEdit={handleEditBlock}
+                  onDelete={(blockId) => setDeletingBlockId(blockId)}
+                  onViewMap={(lat, lng, title) => {
+                    setMapData({ lat, lng, title });
+                    setShowMapDialog(true);
+                  }}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         </div>
       </div>
 
@@ -455,6 +540,73 @@ const Itinerary = () => {
         activities={activities}
         onAddActivity={handleAddActivity}
       />
+
+      {/* Edit Block Dialog */}
+      {editingBlock && (
+        <Dialog open={!!editingBlock} onOpenChange={() => setEditingBlock(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Itinerary Block</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="edit-title">Title</Label>
+                <Input
+                  id="edit-title"
+                  value={editingBlock.title}
+                  onChange={(e) => setEditingBlock({ ...editingBlock, title: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-location">Location</Label>
+                <Input
+                  id="edit-location"
+                  value={editingBlock.location}
+                  onChange={(e) => setEditingBlock({ ...editingBlock, location: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-notes">Notes</Label>
+                <Textarea
+                  id="edit-notes"
+                  value={editingBlock.notes}
+                  onChange={(e) => setEditingBlock({ ...editingBlock, notes: e.target.value })}
+                  className="mt-1"
+                  rows={4}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingBlock(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEdit}>
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deletingBlockId} onOpenChange={() => setDeletingBlockId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this itinerary block. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deletingBlockId && handleDeleteBlock(deletingBlockId)}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Map Dialog */}
       {mapData && (

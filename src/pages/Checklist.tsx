@@ -4,9 +4,17 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { supabaseLite as supabase } from "@/integrations/supabase/lite";
 import { toast } from "sonner";
+import { DraggableChecklistItem } from "@/components/DraggableChecklistItem";
+import { useTripStore } from "@/store/tripStore";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 interface ChecklistItem {
   id: string;
@@ -21,6 +29,17 @@ const Checklist = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ChecklistItem[]>([]);
+  const [editingItem, setEditingItem] = useState<ChecklistItem | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const { updateChecklistItem, deleteChecklistItem, reorderChecklist } = useTripStore();
 
   useEffect(() => {
     loadChecklist();
@@ -64,6 +83,82 @@ const Checklist = () => {
     }
   };
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    reorderChecklist(items, active.id as string, over.id as string, async (reorderedItems) => {
+      try {
+        // Update all items in database with new order
+        for (const item of reorderedItems) {
+          await supabase
+            .from('checklist_items')
+            .update({ item_order: item.item_order })
+            .eq('id', item.id);
+        }
+
+        setItems(reorderedItems);
+        toast.success('Checklist reordered successfully');
+      } catch (error) {
+        console.error('Error reordering checklist:', error);
+        toast.error('Failed to reorder checklist');
+      }
+    });
+  };
+
+  const handleEditItem = (item: ChecklistItem) => {
+    setEditingItem(item);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingItem) return;
+
+    updateChecklistItem(editingItem.id, editingItem, async (updatedItem) => {
+      try {
+        const { error } = await supabase
+          .from('checklist_items')
+          .update({
+            title: editingItem.title,
+            assignee_role: editingItem.assignee_role,
+          })
+          .eq('id', editingItem.id);
+
+        if (error) throw error;
+
+        setItems(prev =>
+          prev.map(item => (item.id === editingItem.id ? editingItem : item))
+        );
+
+        toast.success('Item updated successfully');
+        setEditingItem(null);
+      } catch (error) {
+        console.error('Error updating item:', error);
+        toast.error('Failed to update item');
+      }
+    });
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    deleteChecklistItem(itemId, async () => {
+      try {
+        const { error } = await supabase
+          .from('checklist_items')
+          .delete()
+          .eq('id', itemId);
+
+        if (error) throw error;
+
+        setItems(items.filter(i => i.id !== itemId));
+        toast.success('Item deleted successfully');
+        setDeletingItemId(null);
+      } catch (error) {
+        console.error('Error deleting item:', error);
+        toast.error('Failed to delete item');
+      }
+    });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -101,35 +196,82 @@ const Checklist = () => {
         </div>
 
         <div className="space-y-3">
-          {items.map((item) => (
-            <Card
-              key={item.id}
-              className={`p-4 transition-all ${item.done ? "opacity-60" : ""}`}
-            >
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id={item.id}
-                  checked={item.done}
-                  onCheckedChange={() => toggleItem(item.id, item.done)}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+              {items.map((item) => (
+                <DraggableChecklistItem
+                  key={item.id}
+                  item={item}
+                  onToggle={toggleItem}
+                  onEdit={handleEditItem}
+                  onDelete={(itemId) => setDeletingItemId(itemId)}
                 />
-                <div className="flex-1">
-                  <label
-                    htmlFor={item.id}
-                    className={`font-medium cursor-pointer ${
-                      item.done ? "line-through" : ""
-                    }`}
-                  >
-                    {item.title}
-                  </label>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    Assigned to: {item.assignee_role}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))}
+              ))}
+            </SortableContext>
+          </DndContext>
         </div>
       </div>
+
+      {/* Edit Item Dialog */}
+      {editingItem && (
+        <Dialog open={!!editingItem} onOpenChange={() => setEditingItem(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Checklist Item</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="edit-title">Task</Label>
+                <Input
+                  id="edit-title"
+                  value={editingItem.title}
+                  onChange={(e) => setEditingItem({ ...editingItem, title: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-assignee">Assigned to</Label>
+                <Input
+                  id="edit-assignee"
+                  value={editingItem.assignee_role}
+                  onChange={(e) => setEditingItem({ ...editingItem, assignee_role: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingItem(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEdit}>
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deletingItemId} onOpenChange={() => setDeletingItemId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this checklist item. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deletingItemId && handleDeleteItem(deletingItemId)}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
