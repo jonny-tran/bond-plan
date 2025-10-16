@@ -290,8 +290,11 @@ const Itinerary = () => {
 
         if (checklistError) throw checklistError;
 
-        // Update local state
-        setBlocks([...blocks, insertedBlock as any]);
+        // Update local state with sorted blocks
+        const updatedBlocks = [...blocks, insertedBlock as any].sort(
+          (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+        );
+        setBlocks(updatedBlocks);
 
         toast.success(`Added "${activity.title}" to itinerary with ${newChecklistItems.length} checklist item(s)`);
 
