@@ -4,8 +4,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
 const DestinationSelect = lazy(() => import("./pages/DestinationSelect"));
 const TripBrief = lazy(() => import("./pages/TripBrief"));
 const Itinerary = lazy(() => import("./pages/Itinerary"));
@@ -23,11 +25,12 @@ const App = () => (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/destinations" element={<DestinationSelect />} />
-            <Route path="/trip/new" element={<TripBrief />} />
-            <Route path="/trip/:id/itinerary" element={<Itinerary />} />
-            <Route path="/trip/:id/checklist" element={<Checklist />} />
-            <Route path="/trip/:id/runsheet" element={<Runsheet />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/destinations" element={<ProtectedRoute><DestinationSelect /></ProtectedRoute>} />
+            <Route path="/trip/new" element={<ProtectedRoute><TripBrief /></ProtectedRoute>} />
+            <Route path="/trip/:id/itinerary" element={<ProtectedRoute><Itinerary /></ProtectedRoute>} />
+            <Route path="/trip/:id/checklist" element={<ProtectedRoute><Checklist /></ProtectedRoute>} />
+            <Route path="/trip/:id/runsheet" element={<ProtectedRoute><Runsheet /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

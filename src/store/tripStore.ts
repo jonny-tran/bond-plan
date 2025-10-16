@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { activitySchema, blockUpdateSchema, checklistItemSchema } from '@/lib/validation';
 
 interface Activity {
   id: string;
@@ -102,6 +103,14 @@ const arrayMove = <T,>(array: T[], from: number, to: number): T[] => {
 
 export const useTripStore = create<TripStore>((set) => ({
   addActivityToItinerary: (activity, tripId, lastBlock, onSuccess) => {
+    // Validate activity data
+    try {
+      activitySchema.parse(activity);
+    } catch (error) {
+      console.error("Invalid activity data:", error);
+      return;
+    }
+
     // Calculate start and end times
     const startTime = lastBlock
       ? new Date(new Date(lastBlock.end_time).getTime() + 15 * 60000) // 15 min after last block
@@ -167,6 +176,14 @@ export const useTripStore = create<TripStore>((set) => ({
   },
 
   updateBlock: (blockId, updates, onSuccess) => {
+    // Validate updates
+    try {
+      blockUpdateSchema.parse(updates);
+    } catch (error) {
+      console.error("Invalid block update data:", error);
+      return;
+    }
+    
     const updatedBlock = { ...updates, id: blockId } as ItineraryBlock;
     onSuccess(updatedBlock);
   },
