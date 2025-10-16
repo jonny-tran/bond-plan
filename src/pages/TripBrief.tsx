@@ -11,7 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
+
 import { toast } from "sonner";
 import { budgetLevels } from "@/data/types";
 import { tripSchema } from "@/lib/validation";
@@ -73,47 +73,41 @@ const TripBrief = () => {
     setLoading(true);
     
     try {
-      // Get authenticated user
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      
-      if (authError || !user) {
-        toast.error("You must be logged in to create a trip");
-        navigate("/auth");
-        return;
-      }
-
       // Validate form data
       const validatedData = tripSchema.parse({
         title: formData.title,
         description: formData.description || "",
-        participantCount: parseInt(formData.participantCount),
-        budgetLevel: formData.budgetLevel,
-        goalTags: formData.goalTags,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
+        start_date: formData.startDate.toISOString(),
+        end_date: formData.endDate.toISOString(),
+        participant_count: parseInt(formData.participantCount),
+        budget_level: formData.budgetLevel,
+        goal_tags: formData.goalTags,
       });
 
-      // Create trip
-      const { data: tripData, error: tripError } = await supabase
-        .from("trips")
-        .insert([{
-          creator_id: user.id,
-          title: validatedData.title,
-          description: validatedData.description || null,
-          start_date: validatedData.startDate.toISOString(),
-          end_date: validatedData.endDate.toISOString(),
-          participant_count: validatedData.participantCount,
-          budget_level: validatedData.budgetLevel,
-          goal_tags: validatedData.goalTags,
-          status: "draft"
-        }])
-        .select()
-        .single();
+      // Get destination data
+      const destinationData = JSON.parse(localStorage.getItem('selectedDestination') || '{}');
+      
+      // Create a temporary trip ID for guest users
+      const tempTripId = `temp-${Date.now()}`;
+      
+      // Store trip data in localStorage
+      const tripData = {
+        id: tempTripId,
+        title: validatedData.title,
+        description: validatedData.description,
+        start_date: validatedData.start_date,
+        end_date: validatedData.end_date,
+        participant_count: validatedData.participant_count,
+        budget_level: validatedData.budget_level,
+        goal_tags: validatedData.goal_tags,
+        status: "draft",
+        destination: destinationData
+      };
+      
+      localStorage.setItem(`trip-${tempTripId}`, JSON.stringify(tripData));
 
-      if (tripError) throw tripError;
-
-      toast.success("Trip brief created! Generating itinerary...");
-      navigate(`/trip/${tripData.id}/itinerary`);
+      toast.success("Trip brief created! Building your itinerary...");
+      navigate(`/trip/${tempTripId}/itinerary`);
     } catch (error) {
       if (error instanceof z.ZodError) {
         toast.error(error.errors[0].message);

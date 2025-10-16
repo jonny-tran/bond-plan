@@ -10,17 +10,14 @@ export const tripSchema = z.object({
     .max(2000, "Description must be less than 2000 characters")
     .optional()
     .or(z.literal("")),
-  participantCount: z.number()
+  participant_count: z.number()
     .int("Must be a whole number")
     .min(2, "At least 2 participants required")
     .max(1000, "Maximum 1000 participants"),
-  budgetLevel: z.enum(["low", "medium", "high"]),
-  goalTags: z.array(z.string()).max(10, "Maximum 10 goals"),
-  startDate: z.date(),
-  endDate: z.date(),
-}).refine(data => data.endDate >= data.startDate, {
-  message: "End date must be after start date",
-  path: ["endDate"],
+  budget_level: z.enum(["low", "medium", "high"]),
+  goal_tags: z.array(z.string()).max(10, "Maximum 10 goals"),
+  start_date: z.string().or(z.date()),
+  end_date: z.string().or(z.date()),
 });
 
 export const activitySchema = z.object({

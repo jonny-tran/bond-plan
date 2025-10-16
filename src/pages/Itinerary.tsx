@@ -80,9 +80,46 @@ const Itinerary = () => {
     loadTripData();
   }, [id]);
 
+  const checkAuthAndSave = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast.error("Please login to save your trip");
+      navigate('/auth', { state: { returnTo: `/trip/${id}/itinerary` } });
+      return false;
+    }
+    return true;
+  };
+
   const loadTripData = async () => {
     try {
-      // Load trip
+      // Check if this is a temp trip (guest user)
+      if (id?.startsWith('temp-')) {
+        const tempTripData = localStorage.getItem(`trip-${id}`);
+        if (tempTripData) {
+          const parsedTrip = JSON.parse(tempTripData);
+          setTrip(parsedTrip);
+          
+          // Load activities library
+          const { data: activitiesData, error: activitiesError } = await supabase
+            .from("activities")
+            .select("*")
+            .order("title");
+
+          if (activitiesError) throw activitiesError;
+          setActivities(activitiesData);
+          
+          // Load temp blocks if any
+          const tempBlocks = localStorage.getItem(`blocks-${id}`);
+          if (tempBlocks) {
+            setBlocks(JSON.parse(tempBlocks));
+          }
+          
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Load trip from database
       const { data: tripData, error: tripError } = await supabase
         .from("trips")
         .select("*")
@@ -252,7 +289,57 @@ const Itinerary = () => {
     }
   };
 
+  const handleSavePlan = async () => {
+    if (!(await checkAuthAndSave())) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Save trip to database
+      const tripToSave = {
+        ...trip,
+        creator_id: user.id,
+      };
+      delete tripToSave.id;
+      delete tripToSave.destination;
+
+      const { data: savedTrip, error: tripError } = await supabase
+        .from("trips")
+        .insert([tripToSave])
+        .select()
+        .single();
+
+      if (tripError) throw tripError;
+
+      // Save blocks to database
+      const blocksToSave = blocks.map((block, index) => ({
+        ...block,
+        trip_id: savedTrip.id,
+        block_order: index,
+      })).map(({ id, activity, ...rest }) => rest);
+
+      const { error: blocksError } = await supabase
+        .from("itinerary_blocks")
+        .insert(blocksToSave);
+
+      if (blocksError) throw blocksError;
+
+      // Clear localStorage
+      localStorage.removeItem(`trip-${id}`);
+      localStorage.removeItem(`blocks-${id}`);
+
+      toast.success("Trip saved successfully!");
+      navigate(`/trip/${savedTrip.id}/itinerary`);
+    } catch (error) {
+      console.error("Error saving trip:", error);
+      toast.error("Failed to save trip");
+    }
+  };
+
   const handleExportPdf = async () => {
+    if (!(await checkAuthAndSave())) return;
+
     const element = exportRef.current;
     if (!element) return;
 
@@ -268,10 +355,12 @@ const Itinerary = () => {
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`${trip?.title || 'itinerary'}.pdf`);
       
-      await supabase.from("analytics_events").insert([{
-        event_name: "pdf_exported",
-        trip_id: id,
-      }]);
+      if (!id?.startsWith('temp-')) {
+        await supabase.from("analytics_events").insert([{
+          event_name: "pdf_exported",
+          trip_id: id,
+        }]);
+      }
       
       toast.success("PDF exported successfully!");
     } catch (error) {
@@ -290,6 +379,22 @@ const Itinerary = () => {
 
     addActivityToItinerary(activity, trip.id, lastBlock as any, async (newBlock, newChecklistItems) => {
       try {
+        // For temp trips, just update local state
+        if (id?.startsWith('temp-')) {
+          const blockWithActivity = {
+            ...newBlock,
+            id: `temp-block-${Date.now()}`,
+            activity
+          };
+          const updatedBlocks = [...blocks, blockWithActivity].sort(
+            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+          );
+          setBlocks(updatedBlocks);
+          localStorage.setItem(`blocks-${id}`, JSON.stringify(updatedBlocks));
+          toast.success(`Added "${activity.title}" to itinerary`);
+          return;
+        }
+
         // Insert the new itinerary block
         const { data: insertedBlock, error: blockError } = await supabase
           .from('itinerary_blocks')
@@ -462,6 +567,11 @@ const Itinerary = () => {
               <p className="text-muted-foreground text-lg">{trip.description}</p>
             </div>
             <div className="flex gap-2">
+              {id?.startsWith('temp-') && (
+                <Button size="sm" onClick={handleSavePlan}>
+                  Save Plan
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleShare}>
                 <Share2 className="w-4 h-4 mr-2" />
                 Share
